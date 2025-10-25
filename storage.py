@@ -86,21 +86,38 @@ class DynamoDBStorage:
         # Build the update expression dynamically
         update_expression = "SET "
         expression_attribute_values = {}
+        expression_attribute_names = {}
         
         # Iterate over fields that can be updated
         updatable_fields = ['owner', 'label', 'description']
         for field in updatable_fields:
             if field in request:
-                update_expression += f"{field} = :{field}, "
-                expression_attribute_values[f":{field}"] = request[field]
+
+                # Use a safe placeholder
+                name_placeholder = f"#{field}" 
+                value_placeholder = f":{field}" 
+
+                update_expression += f"{name_placeholder} = {value_placeholder}, "
+                
+                # Map the safe attribute names and values to their real counterparts
+                expression_attribute_names[name_placeholder] = field
+                expression_attribute_values[value_placeholder] = request[field]
         
         # Handle otherAttributes
         if 'otherAttributes' in request:
-            for attr in request['otherAttributes']:
+            for i, attr in enumerate(request['otherAttributes']):
                 attr_name = attr['name']
                 attr_val = attr['value']
-                update_expression += f"{attr_name} = :{attr_name}, "
-                expression_attribute_values[f":{attr_name}"] = attr_val
+                
+                # Create a safe placeholder
+                name_placeholder = f"#attr{i}"
+                value_placeholder = f":val{i}"
+
+                update_expression += f"{name_placeholder} = {value_placeholder}, "
+
+                # Map the safe attribute names and values to their real counterparts
+                expression_attribute_names[name_placeholder] = attr_name
+                expression_attribute_values[value_placeholder] = attr_val
 
         # if there are no fields to update, skip the operation
         if not expression_attribute_values:
@@ -111,11 +128,20 @@ class DynamoDBStorage:
         update_expression = update_expression.rstrip(', ')
         
         # Perform the update
-        self.table.update_item(
-            Key={'id': widget_id},
-            UpdateExpression=update_expression,
-            ExpressionAttributeValues=expression_attribute_values
-        )
+        if expression_attribute_names:
+            self.table.update_item(
+                Key={'id': widget_id},
+                UpdateExpression=update_expression,
+                ExpressionAttributeNames=expression_attribute_names,
+                ExpressionAttributeValues=expression_attribute_values
+            )
+        else:
+             # If we didn't have any 'otherAttributes', run the old command
+             self.table.update_item(
+                Key={'id': widget_id},
+                UpdateExpression=update_expression,
+                ExpressionAttributeValues=expression_attribute_values
+            )
 
     def delete_widget(self, request):
         widget_id = request['widgetId']
