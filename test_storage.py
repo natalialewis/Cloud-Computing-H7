@@ -12,7 +12,7 @@ class TestS3Storage(unittest.TestCase):
         self.sample_request = {
             "type": "create",
             "requestId": "req-s3-test",
-            "widgetId": "w-s3-001",
+            "widgetId": "w-s3-001",  ### <-- MUST be widgetId (INPUT)
             "owner": "Test User S3",
             "label": "S3 Widget",
             "description": "A widget for S3."
@@ -37,8 +37,6 @@ class TestS3Storage(unittest.TestCase):
         # 3. Compare
         
         # Calculate the expected key based on assignment rules:
-        # "widgets/{owner}/{widget id}"
-        # "replacing spaces with dashes and converting the whole string to lower case"
         expected_key = "widgets/test-user-s3/w-s3-001"
         
         # Calculate the expected body (JSON string of the whole request)
@@ -49,6 +47,39 @@ class TestS3Storage(unittest.TestCase):
             Bucket=self.bucket_name,
             Key=expected_key,
             Body=expected_body
+        )
+
+    @patch('boto3.client')
+    def test_update_widget(self, mock_boto_client):
+        storage = S3Storage(self.bucket_name)
+
+        # mock create the boto3 s3 client and its delete_object method
+        with patch.object(storage, 'create_widget') as mock_create:
+            storage.update_widget(self.sample_request)
+            # make sure update calls create to overwrite
+            mock_create.assert_called_once_with(self.sample_request)
+
+    @patch('boto3.client')
+    def test_delete_widget(self, mock_boto_client):
+        # Set up the mock S3 client
+        mock_s3 = MagicMock()
+        mock_boto_client.return_value = mock_s3
+        storage = S3Storage(self.bucket_name)
+
+        # A sample request to delete (must include owner and widgetId)
+        delete_request = {
+            "widgetId": "w-s3-001",  ### <-- MUST be widgetId (INPUT)
+            "owner": "Test User S3"
+        }
+
+        # Simulate the delete
+        storage.delete_widget(delete_request)
+
+        # Compare that delete_object was called with correct parameters
+        expected_key = "widgets/test-user-s3/w-s3-001"
+        mock_s3.delete_object.assert_called_once_with(
+            Bucket=self.bucket_name,
+            Key=expected_key
         )
 
 
@@ -62,7 +93,7 @@ class TestDynamoDBStorage(unittest.TestCase):
         self.request_with_attribs = {
             "type": "create",
             "requestId": "req-ddb-test-1",
-            "widgetId": "w-ddb-001",
+            "widgetId": "w-ddb-001",  ### <-- MUST be widgetId (INPUT)
             "owner": "Test User DDB",
             "label": "DDB Widget",
             "description": "A widget for DDB.",
@@ -76,7 +107,7 @@ class TestDynamoDBStorage(unittest.TestCase):
         self.request_no_attribs = {
             "type": "create",
             "requestId": "req-ddb-test-2",
-            "widgetId": "w-ddb-002",
+            "widgetId": "w-ddb-002",  ### <-- MUST be widgetId (INPUT)
             "owner": "Another User DDB",
             "label": "Simple DDB Widget"
             # No description or otherAttributes
@@ -103,9 +134,8 @@ class TestDynamoDBStorage(unittest.TestCase):
         # 3. Compare
         
         # This is the expected item that should be sent to put_item.
-        # Notice 'color' and 'size' are top-level keys.
         expected_item = {
-            "widgetId": "w-ddb-001",
+            "id": "w-ddb-001",           ### <-- MUST be id (OUTPUT)
             "owner": "Test User DDB",
             "label": "DDB Widget",
             "description": "A widget for DDB.",
@@ -113,13 +143,8 @@ class TestDynamoDBStorage(unittest.TestCase):
             "size": "medium"
         }
         
-        # Check that boto3.resource('dynamodb') was called
         mock_boto_resource.assert_called_with('dynamodb')
-        
-        # Check that the Table object was retrieved with the correct name
         mock_dynamodb.Table.assert_called_with(self.table_name)
-        
-        # Check that put_item was called once with the correctly structured item
         mock_table.put_item.assert_called_once_with(Item=expected_item)
 
     @patch('boto3.resource')
@@ -141,17 +166,53 @@ class TestDynamoDBStorage(unittest.TestCase):
 
         # 3. Compare
         
-        # The expected item should only contain the properties that exist
-        # in the request.
         expected_item = {
-            "widgetId": "w-ddb-002",
+            "id": "w-ddb-002",           ### <-- MUST be id (OUTPUT)
             "owner": "Another User DDB",
             "label": "Simple DDB Widget"
-            # It should gracefully handle the missing 'description' and 'otherAttributes'
         }
         
         mock_dynamodb.Table.assert_called_with(self.table_name)
         mock_table.put_item.assert_called_once_with(Item=expected_item)
 
-if __name__ == '__main__':
-    unittest.main()
+    @patch('boto3.resource')
+    def test_update_widget(self, mock_boto_resource):
+        # Set up the mock DynamoDB resource and table
+        mock_dynamodb = MagicMock()
+        mock_table = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        mock_dynamodb.Table.return_value = mock_table
+        storage = DynamoDBStorage(self.table_name)
+
+        # Create a sample update request
+        update_request = {
+            "widgetId": "w-ddb-001",  ### <-- MUST be widgetId (INPUT)
+            "label": "New Label",
+            "otherAttributes": [
+                {"name": "color", "value": "red"}
+            ]
+        }
+
+        # Stimulate the update
+        storage.update_widget(update_request)
+
+        # Compare the expected key
+        expected_key = {'id': 'w-ddb-001'} ### <-- MUST be id (OUTPUT)
+
+        # Compare the expected update expression and values
+        expected_update_expression = "SET label = :label, color = :color"
+        expected_values = {
+            ":label": "New Label",
+            ":color": "red"
+        }
+
+        # Get the actual arguments passed to update_item
+        call_args = mock_table.update_item.call_args
+
+        # Check the key
+        self.assertEqual(call_args.kwargs['Key'], expected_key)
+
+        # Check the values
+        self.assertEqual(call_args.kwargs['ExpressionAttributeValues'], expected_values)
+
+        # Check the expression (we sort the parts

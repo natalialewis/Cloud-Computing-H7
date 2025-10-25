@@ -31,6 +31,24 @@ class S3Storage:
             Body=body
         )
 
+    def update_widget(self, request):
+        # update the widget by overwriting it with the new information
+        logging.info(f"Updating widget in S3: {request['widgetId']}")
+        self.create_widget(request)
+
+    def delete_widget(self, request):
+        widget_id = request['widgetId']
+        # I need the owner to delete the object from S3 so this checks if it's present
+        if 'owner' not in request:
+            logging.error(f"Cannot delete widget {widget_id} from S3: 'owner' is missing from request.")
+            raise ValueError("Delete request for S3 must include 'owner'")
+            
+        owner = request['owner']
+        key = self._format_key(owner, widget_id)
+        
+        logging.info(f"Deleting widget from S3: {key}")
+        self.s3.delete_object(Bucket=self.bucket, Key=key)
+
 # Storage handler for DynamoDB
 class DynamoDBStorage:
     def __init__(self, table_name):
@@ -60,3 +78,48 @@ class DynamoDBStorage:
 
         # Store the item in DynamoDB
         self.table.put_item(Item=item)
+
+    def update_widget(self, request):
+        widget_id = request['widgetId']
+        logging.info(f"Updating widget in DynamoDB: {widget_id}")
+
+        # Build the update expression dynamically
+        update_expression = "SET "
+        expression_attribute_values = {}
+        
+        # Iterate over fields that can be updated
+        updatable_fields = ['owner', 'label', 'description']
+        for field in updatable_fields:
+            if field in request:
+                update_expression += f"{field} = :{field}, "
+                expression_attribute_values[f":{field}"] = request[field]
+        
+        # Handle otherAttributes
+        if 'otherAttributes' in request:
+            for attr in request['otherAttributes']:
+                attr_name = attr['name']
+                attr_val = attr['value']
+                update_expression += f"{attr_name} = :{attr_name}, "
+                expression_attribute_values[f":{attr_name}"] = attr_val
+
+        # if there are no fields to update, skip the operation
+        if not expression_attribute_values:
+            logging.warning(f"Update request for {widget_id} had no fields to update. Skipping.")
+            return
+
+        # Remove the trailing comma and space
+        update_expression = update_expression.rstrip(', ')
+        
+        # Perform the update
+        self.table.update_item(
+            Key={'id': widget_id},
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_attribute_values
+        )
+
+    def delete_widget(self, request):
+        widget_id = request['widgetId']
+        logging.info(f"Deleting widget from DynamoDB: {widget_id}")
+        self.table.delete_item(
+            Key={'id': widget_id}
+        )
