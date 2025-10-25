@@ -60,11 +60,13 @@ def consume_requests(storage, consume_bucket_name, bucket_name, table_name):
 
                 # if the request is to delete a widget
                 elif request.get("type") == "delete":
-                    logging.warning(f"Delete request {req_id} not implemented yet (HW7). Skipping.")
+                    storage_handler.delete_widget(request)
+                    logging.info(f"Successfully deleted widget for request: {req_id}")
 
                 # if the request is to change a widget
                 elif request.get("type") == "update":
-                    logging.warning(f"Update request {req_id} not implemented yet (HW7). Skipping.")
+                    storage_handler.update_widget(request)
+                    logging.info(f"Successfully updated widget for request: {req_id}")
 
             # else if there is no request, wait for 100 ms before checking again
             else:
