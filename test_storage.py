@@ -186,7 +186,7 @@ class TestDynamoDBStorage(unittest.TestCase):
 
         # Create a sample update request
         update_request = {
-            "widgetId": "w-ddb-001",  ### <-- MUST be widgetId (INPUT)
+            "widgetId": "w-ddb-001",
             "label": "New Label",
             "otherAttributes": [
                 {"name": "color", "value": "red"}
@@ -200,10 +200,14 @@ class TestDynamoDBStorage(unittest.TestCase):
         expected_key = {'id': 'w-ddb-001'} ### <-- MUST be id (OUTPUT)
 
         # Compare the expected update expression and values
-        expected_update_expression = "SET label = :label, color = :color"
+        expected_update_expression = "SET #label = :label, #attr0 = :val0"
+        expected_names = {
+            '#label': 'label',
+            '#attr0': 'color'
+        }
         expected_values = {
             ":label": "New Label",
-            ":color": "red"
+            ":val0": "red"
         }
 
         # Get the actual arguments passed to update_item
@@ -215,4 +219,11 @@ class TestDynamoDBStorage(unittest.TestCase):
         # Check the values
         self.assertEqual(call_args.kwargs['ExpressionAttributeValues'], expected_values)
 
-        # Check the expression (we sort the parts
+        # check the names
+        self.assertEqual(call_args.kwargs['ExpressionAttributeNames'], expected_names)
+
+        # Check the expression
+        actual_expr = call_args.kwargs['UpdateExpression']
+        actual_parts = sorted(actual_expr.replace("SET ", "").split(', '))
+        expected_parts = sorted(expected_update_expression.replace("SET ", "").split(', '))
+        self.assertEqual(actual_parts, expected_parts)
