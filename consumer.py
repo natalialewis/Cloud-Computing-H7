@@ -6,6 +6,9 @@ from storage import S3Storage
 from storage import DynamoDBStorage
 import logging
 
+# max 30s of searching before timing out
+MAX_SEARCH_TIME = 30
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -30,7 +33,7 @@ logging.basicConfig(
 def consume_requests(storage, queue_name, consume_bucket_name, bucket_name, table_name):
     # loop until the user presses Ctrl+C
     try:
-        print("Starting consumer... Press Ctrl+C to stop.")
+        print("Starting consumer... Press Ctrl+C to stop... Will stop automatically after 30s of no requests...")
 
         request_retriever = None
         retriever_mode = None
@@ -52,7 +55,15 @@ def consume_requests(storage, queue_name, consume_bucket_name, bucket_name, tabl
         elif storage == "dynamodb":
             storage_handler = DynamoDBStorage(table_name)
 
+        # initialize the start time for timeout tracking
+        last_time = time.time()
+
         while True:
+            # check if we have timed out
+            current_time = time.time()
+            if current_time - last_time > MAX_SEARCH_TIME:
+                logging.info("No requests found for 30 seconds. Exiting consumer.")
+                break
 
             # try to get a request for s3
             if retriever_mode == "s3":
