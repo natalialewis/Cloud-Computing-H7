@@ -7,7 +7,7 @@ from storage import DynamoDBStorage
 import logging
 
 # max 30s of searching before timing out
-MAX_SEARCH_TIME = 30
+MAX_SEARCH_TIME = 20
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +33,7 @@ logging.basicConfig(
 def consume_requests(storage, queue_name, consume_bucket_name, bucket_name, table_name):
     # loop until the user presses Ctrl+C
     try:
-        print("Starting consumer... Press Ctrl+C to stop... Will stop automatically after 30s of no requests...")
+        print("Starting consumer... Press Ctrl+C to stop... Will stop automatically after 20s of no requests...")
 
         request_retriever = None
         retriever_mode = None
@@ -62,7 +62,7 @@ def consume_requests(storage, queue_name, consume_bucket_name, bucket_name, tabl
             # check if we have timed out
             current_time = time.time()
             if current_time - last_time > MAX_SEARCH_TIME:
-                logging.info("No requests found for 30 seconds. Exiting consumer.")
+                logging.info("No requests found for 20 seconds. Exiting consumer.")
                 break
 
             # try to get a request for s3
@@ -92,6 +92,9 @@ def consume_requests(storage, queue_name, consume_bucket_name, bucket_name, tabl
                     elif request.get("type") == "update":
                         storage_handler.update_widget(request)
                         logging.info(f"Successfully updated widget for request: {req_id}")
+
+                    # reset the last_time since we processed a request
+                    last_time = time.time()
 
                 # else if there is no request, wait for 100 ms before checking again
                 else:
@@ -124,6 +127,9 @@ def consume_requests(storage, queue_name, consume_bucket_name, bucket_name, tabl
 
                         # If processing was successful, delete the message
                         request_retriever.delete_message(receipt_handle)
+
+                        # reset the last_time since we processed a request
+                        last_time = time.time()
                         
                     except Exception as e:
                         logging.error(f"Failed to process SQS request {req_id}. Error: {e}. Message will not be deleted.")
